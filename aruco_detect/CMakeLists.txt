@@ -18,6 +18,8 @@ find_package(catkin REQUIRED COMPONENTS
 )
 
 find_package(OpenCV REQUIRED)
+find_package(CUDA  REQUIRED)
+include_directories("${CUDA_INCLUDE_DIRS}")
 
 # Python Setup
 catkin_python_setup()
@@ -40,7 +42,7 @@ add_executable(aruco_detect src/aruco_detect.cpp)
 add_dependencies(aruco_detect ${${PROJECT_NAME}_EXPORTED_TARGETS}
                  ${catkin_EXPORTED_TARGETS})
 
-target_link_libraries(aruco_detect ${catkin_LIBRARIES} ${OpenCV_LIBS})
+target_link_libraries(aruco_detect ${catkin_LIBRARIES} ${OpenCV_LIBS} ${CUDA_LIBS})
 
 #############
 ## Install ##
