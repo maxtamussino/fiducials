@@ -37,9 +37,11 @@ the use of this software, even if advised of the possibility of such damage.
 */
 
 #include "precomp.hpp"
-#include "opencv2/aruco.hpp"
+#include <opencv2/aruco.hpp>
 #include <opencv2/core.hpp>
 #include <opencv2/imgproc.hpp>
+
+#include <opencv2/cudaimgproc.hpp>
 
 #include "zarray.hpp"
 #include "apriltag_quad_thresh.hpp"
@@ -107,7 +109,7 @@ static void _convertToGrey(InputArray _in, OutputArray _out) {
     CV_Assert(_in.type() == CV_8UC1 || _in.type() == CV_8UC3);
 
     if(_in.type() == CV_8UC3)
-        cvtColor(_in, _out, COLOR_BGR2GRAY);
+        cuda::cvtColor(_in, _out, COLOR_BGR2GRAY);
     else
         _in.copyTo(_out);
 }
