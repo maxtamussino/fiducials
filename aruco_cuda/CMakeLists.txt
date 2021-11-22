@@ -33,7 +33,7 @@ catkin_package(
 #  DEPENDS system_lib
 )
 
-include_directories(include/opencv2 ${catkin_INCLUDE_DIRS})
+include_directories(include ${catkin_INCLUDE_DIRS})
 
 add_executable(aruco_detect_cuda src/aruco_detect_cuda.cpp src/aruco_cuda.cpp src/apriltag_quad_thresh.cpp src/zmaxheap.cpp)
 
