@@ -36,8 +36,8 @@ or tort (including negligence or otherwise) arising in any way out of
 the use of this software, even if advised of the possibility of such damage.
 */
 
-#ifndef __OPENCV_ARUCO_HPP__
-#define __OPENCV_ARUCO_HPP__
+#ifndef __OPENCV_ARUCO_CUDA_HPP__
+#define __OPENCV_ARUCO_CUDA_HPP__
 
 #include <opencv2/core.hpp>
 #include <vector>
@@ -72,8 +72,9 @@ the use of this software, even if advised of the possibility of such damage.
  *
 */
 
-namespace cv {
-namespace aruco {
+namespace aruco_cuda {
+
+using namespace cv;
 
 //! @addtogroup aruco
 //! @{
@@ -218,7 +219,7 @@ struct CV_EXPORTS_W DetectorParameters {
  * @sa estimatePoseSingleMarkers,  estimatePoseBoard
  *
  */
-CV_EXPORTS_W void detectMarkers(InputArray image, const Ptr<Dictionary> &dictionary, OutputArrayOfArrays corners,
+CV_EXPORTS_W void detectMarkers(InputArray image, const Ptr<aruco::Dictionary> &dictionary, OutputArrayOfArrays corners,
                                 OutputArray ids, const Ptr<DetectorParameters> &parameters = DetectorParameters::create(),
                                 OutputArrayOfArrays rejectedImgPoints = noArray(), InputArray cameraMatrix= noArray(), InputArray distCoeff= noArray());
 
@@ -280,7 +281,7 @@ class CV_EXPORTS_W Board {
     * @param ids vector of the identifiers of the markers in the board
     *
     */
-    CV_WRAP static Ptr<Board> create(InputArrayOfArrays objPoints, const Ptr<Dictionary> &dictionary, InputArray ids);
+    CV_WRAP static Ptr<Board> create(InputArrayOfArrays objPoints, const Ptr<aruco::Dictionary> &dictionary, InputArray ids);
 
     /**
     * @brief Set ids vector
@@ -298,7 +299,7 @@ class CV_EXPORTS_W Board {
     CV_PROP std::vector< std::vector< Point3f > > objPoints;
 
     /// the dictionary of markers employed for this board
-    CV_PROP Ptr<Dictionary> dictionary;
+    CV_PROP Ptr<aruco::Dictionary> dictionary;
 
     /// vector of the identifiers of the markers in the board (same size than objPoints)
     /// The identifiers refers to the board dictionary
@@ -344,7 +345,7 @@ class CV_EXPORTS_W GridBoard : public Board {
      * the marker size and marker separation.
      */
     CV_WRAP static Ptr<GridBoard> create(int markersX, int markersY, float markerLength,
-                                         float markerSeparation, const Ptr<Dictionary> &dictionary, int firstMarker = 0);
+                                         float markerSeparation, const Ptr<aruco::Dictionary> &dictionary, int firstMarker = 0);
 
     /**
       *
@@ -508,7 +509,7 @@ CV_EXPORTS_W void drawAxis(InputOutputArray image, InputArray cameraMatrix, Inpu
  *
  * This function returns a marker image in its canonical form (i.e. ready to be printed)
  */
-CV_EXPORTS_W void drawMarker(const Ptr<Dictionary> &dictionary, int id, int sidePixels, OutputArray img,
+CV_EXPORTS_W void drawMarker(const Ptr<aruco::Dictionary> &dictionary, int id, int sidePixels, OutputArray img,
                              int borderBits = 1);
 
 
@@ -610,7 +611,6 @@ CV_EXPORTS_W void getBoardObjectAndImagePoints(const Ptr<Board> &board, InputArr
 
 
 //! @}
-}
 }
 
 #endif

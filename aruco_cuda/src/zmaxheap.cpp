@@ -27,8 +27,9 @@
 // Heap property: a parent is greater than (or equal to) its children.
 
 #define MIN_CAPACITY 16
-namespace cv {
-namespace aruco {
+
+namespace aruco_cuda {
+
 struct zmaxheap
 {
     size_t el_sz;
@@ -204,4 +205,4 @@ int zmaxheap_remove_max(zmaxheap_t *heap, void *p, float *v)
     return zmaxheap_remove_index(heap, 0, p, v);
 }
 
-}}
+}

@@ -16,16 +16,18 @@
 // because we use a fixed-point 16 bit integer representation with one
 // fractional bit.
 
-#ifndef _OPENCV_APRIL_QUAD_THRESH_HPP_
-#define _OPENCV_APRIL_QUAD_THRESH_HPP_
+#ifndef _OPENCV_APRIL_QUAD_THRESH_CUDA_HPP_
+#define _OPENCV_APRIL_QUAD_THRESH_CUDA_HPP_
 
 #include "opencv2/aruco.hpp"
+#include "aruco_cuda.hpp"
 #include "unionfind.hpp"
 #include "zmaxheap.hpp"
 #include "zarray.hpp"
 
-namespace cv {
-namespace aruco {
+namespace aruco_cuda {
+
+using namespace cv;
 
 static inline uint32_t u64hash_2(uint64_t x) {
     return uint32_t((2654435761UL * x) >> 32);
@@ -121,5 +123,5 @@ void threshold(const Mat mIm, const Ptr<DetectorParameters> &parameters, Mat& mT
  */
 zarray_t *apriltag_quad_thresh(const Ptr<DetectorParameters> &parameters, const Mat & mImg, std::vector< std::vector< Point > > &contours);
 
-}}
+}
 #endif

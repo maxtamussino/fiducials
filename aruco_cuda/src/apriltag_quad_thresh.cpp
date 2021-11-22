@@ -25,8 +25,7 @@
     #include <opencv2/imgproc.hpp>
 #endif
 
-namespace cv {
-namespace aruco {
+namespace aruco_cuda {
 
 static void ptsort_(struct pt *pts, int sz); // forward delaration
 
@@ -1567,4 +1566,4 @@ imwrite("2.5 debug_lines.pnm", out);
     return quads;
 }
 
-}}
+}

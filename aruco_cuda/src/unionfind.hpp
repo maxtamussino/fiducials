@@ -11,13 +11,14 @@
 // The views and conclusions contained in the software and documentation are those
 // of the authors and should not be interpreted as representing official policies,
 // either expressed or implied, of the Regents of The University of Michigan.
-#ifndef _OPENCV_UNIONFIND_HPP_
-#define _OPENCV_UNIONFIND_HPP_
+#ifndef _OPENCV_UNIONFIND_CUDA_HPP_
+#define _OPENCV_UNIONFIND_CUDA_HPP_
 
 #include <stdint.h>
 #include <stdlib.h>
-namespace cv {
-namespace aruco {
+namespace aruco_cuda {
+
+using namespace cv;
 
 typedef struct unionfind unionfind_t;
 struct unionfind{
@@ -129,5 +130,5 @@ static inline uint32_t unionfind_connect(unionfind_t *uf, uint32_t aid, uint32_t
         return broot;
     }
 }
-}}
+}
 #endif

@@ -21,7 +21,7 @@ find_package(catkin REQUIRED COMPONENTS
 )
 
 find_package(OpenCV REQUIRED)
-find_package(CUDA  REQUIRED)
+find_package(CUDA REQUIRED)
 include_directories("${CUDA_INCLUDE_DIRS}")
 
 generate_dynamic_reconfigure_options(cfg/DetectorParams.cfg)
@@ -33,9 +33,9 @@ catkin_package(
 #  DEPENDS system_lib
 )
 
-include_directories(${catkin_INCLUDE_DIRS})
+include_directories(include/opencv2 ${catkin_INCLUDE_DIRS})
 
-add_executable(aruco_detect_cuda src/aruco_detect_cuda.cpp src/aruco_cuda.cpp)
+add_executable(aruco_detect_cuda src/aruco_detect_cuda.cpp src/aruco_cuda.cpp src/apriltag_quad_thresh.cpp src/zmaxheap.cpp)
 
 add_dependencies(aruco_detect_cuda ${${PROJECT_NAME}_EXPORTED_TARGETS}
                  ${catkin_EXPORTED_TARGETS})

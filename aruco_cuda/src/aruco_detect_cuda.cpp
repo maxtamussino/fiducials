@@ -118,7 +118,7 @@ class FiducialsNode {
     // log spam prevention
     int prev_detected_count;
 
-    cv::Ptr<aruco::DetectorParameters> detectorParams;
+    cv::Ptr<aruco_cuda::DetectorParameters> detectorParams;
     cv::Ptr<aruco::Dictionary> dictionary;
 
     void handleIgnoreString(const std::string& str);
@@ -606,7 +606,7 @@ FiducialsNode::FiducialsNode() : nh(), pnh("~"), it(nh)
 
     int dicno;
 
-    detectorParams = new aruco::DetectorParameters();
+    detectorParams = new aruco_cuda::DetectorParameters();
 
     pnh.param<bool>("publish_images", publish_images, false);
     pnh.param<double>("fiducial_len", fiducial_len, 0.14);

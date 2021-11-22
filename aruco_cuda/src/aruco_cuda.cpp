@@ -41,19 +41,19 @@ the use of this software, even if advised of the possibility of such damage.
 #include <opencv2/core.hpp>
 #include <opencv2/imgproc.hpp>
 
-#include "apriltag_quad_thresh.hpp"
 #include "zarray.hpp"
+#include "apriltag_quad_thresh.hpp"
+#include "aruco_cuda.hpp"
 
 //#define APRIL_DEBUG
 #ifdef APRIL_DEBUG
 #include "opencv2/imgcodecs.hpp"
 #endif
 
-namespace cv {
-namespace aruco {
+namespace aruco_cuda {
 
 using namespace std;
-
+using namespace cv;
 
 /**
   *
@@ -525,7 +525,7 @@ static int _getBorderErrors(const Mat &bits, int markerSize, int borderSize) {
  *                           1 if the candidate is a black candidate (default candidate)
  *                           2 if the candidate is a white candidate
  */
-static uint8_t _identifyOneCandidate(const Ptr<Dictionary>& dictionary, InputArray _image,
+static uint8_t _identifyOneCandidate(const Ptr<aruco::Dictionary>& dictionary, InputArray _image,
                                   vector<Point2f>& _corners, int& idx,
                                   const Ptr<DetectorParameters>& params, int& rotation)
 {
@@ -617,7 +617,7 @@ static void correctCornerPosition( vector< Point2f >& _candidate, int rotate){
  * @brief Identify square candidates according to a marker dictionary
  */
 static void _identifyCandidates(InputArray _image, vector< vector< vector< Point2f > > >& _candidatesSet,
-                                vector< vector< vector<Point> > >& _contoursSet, const Ptr<Dictionary> &_dictionary,
+                                vector< vector< vector<Point> > >& _contoursSet, const Ptr<aruco::Dictionary> &_dictionary,
                                 vector< vector< Point2f > >& _accepted, vector< vector<Point> >& _contours, vector< int >& ids,
                                 const Ptr<DetectorParameters> &params,
                                 OutputArrayOfArrays _rejected = noArray()) {
@@ -982,7 +982,7 @@ static void _apriltag(Mat im_orig, const Ptr<DetectorParameters> & _params, std:
 
 /**
   */
-void detectMarkers(InputArray _image, const Ptr<Dictionary> &_dictionary, OutputArrayOfArrays _corners,
+void detectMarkers(InputArray _image, const Ptr<aruco::Dictionary> &_dictionary, OutputArrayOfArrays _corners,
                    OutputArray _ids, const Ptr<DetectorParameters> &_params,
                    OutputArrayOfArrays _rejectedImgPoints, InputArrayOfArrays camMatrix, InputArrayOfArrays distCoeff) {
 
@@ -1138,7 +1138,7 @@ static void _projectUndetectedMarkers(const Ptr<Board> &_board, InputOutputArray
     // first estimate board pose with the current avaible markers
     Mat rvec, tvec;
     int boardDetectedMarkers;
-    boardDetectedMarkers = aruco::estimatePoseBoard(_detectedCorners, _detectedIds, _board,
+    boardDetectedMarkers = aruco_cuda::estimatePoseBoard(_detectedCorners, _detectedIds, _board,
                                                     _cameraMatrix, _distCoeffs, rvec, tvec);
 
     // at least one marker from board so rvec and tvec are valid
@@ -1272,7 +1272,7 @@ void refineDetectedMarkers(InputArray _image, const Ptr<Board> &_board,
     vector< bool > alreadyIdentified(_rejectedCorners.total(), false);
 
     // maximum bits that can be corrected
-    Dictionary &dictionary = *(_board->dictionary);
+    aruco::Dictionary &dictionary = *(_board->dictionary);
     int maxCorrectionRecalculated =
         int(double(dictionary.maxCorrectionBits) * errorCorrectionRate);
 
@@ -1468,7 +1468,7 @@ void GridBoard::draw(Size outSize, OutputArray _img, int marginSize, int borderB
 
 /**
 */
-Ptr<Board> Board::create(InputArrayOfArrays objPoints, const Ptr<Dictionary> &dictionary, InputArray ids) {
+Ptr<Board> Board::create(InputArrayOfArrays objPoints, const Ptr<aruco::Dictionary> &dictionary, InputArray ids) {
 
     CV_Assert(objPoints.total() == ids.total());
     CV_Assert(objPoints.type() == CV_32FC3 || objPoints.type() == CV_32FC1);
@@ -1491,7 +1491,7 @@ Ptr<Board> Board::create(InputArrayOfArrays objPoints, const Ptr<Dictionary> &di
     Ptr<Board> res = makePtr<Board>();
     ids.copyTo(res->ids);
     res->objPoints = obj_points_vector;
-    res->dictionary = cv::makePtr<Dictionary>(dictionary);
+    res->dictionary = cv::makePtr<aruco::Dictionary>(dictionary);
     return res;
 }
 
@@ -1505,7 +1505,7 @@ void Board::setIds(InputArray ids_) {
 /**
  */
 Ptr<GridBoard> GridBoard::create(int markersX, int markersY, float markerLength, float markerSeparation,
-                            const Ptr<Dictionary> &dictionary, int firstMarker) {
+                            const Ptr<aruco::Dictionary> &dictionary, int firstMarker) {
 
     CV_Assert(markersX > 0 && markersY > 0 && markerLength > 0 && markerSeparation > 0);
 
@@ -1603,7 +1603,7 @@ void drawAxis(InputOutputArray _image, InputArray _cameraMatrix, InputArray _dis
 
 /**
  */
-void drawMarker(const Ptr<Dictionary> &dictionary, int id, int sidePixels, OutputArray _img, int borderBits) {
+void drawMarker(const Ptr<aruco::Dictionary> &dictionary, int id, int sidePixels, OutputArray _img, int borderBits) {
     dictionary->drawMarker(id, sidePixels, _img, borderBits);
 }
 
@@ -1654,7 +1654,7 @@ void _drawPlanarBoardImpl(Board *_board, Size outSize, OutputArray _img, int mar
     }
 
     // now paint each marker
-    Dictionary &dictionary = *(_board->dictionary);
+    aruco::Dictionary &dictionary = *(_board->dictionary);
     Mat marker;
     Point2f outCorners[3];
     Point2f inCorners[3];
@@ -1761,5 +1761,4 @@ double calibrateCameraAruco(InputArrayOfArrays _corners, InputArray _ids, InputA
 
 
 
-}
 }

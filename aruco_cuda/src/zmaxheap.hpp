@@ -11,15 +11,14 @@
 // The views and conclusions contained in the software and documentation are those
 // of the authors and should not be interpreted as representing official policies,
 // either expressed or implied, of the Regents of The University of Michigan.
-#ifndef _OPENCV_ZMAXHEAP_HPP_
-#define _OPENCV_ZMAXHEAP_HPP_
+#ifndef _OPENCV_ZMAXHEAP_CUDA_HPP_
+#define _OPENCV_ZMAXHEAP_CUDA_HPP_
 
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
 
-namespace cv {
-namespace aruco {
+namespace aruco_cuda {
 typedef struct zmaxheap zmaxheap_t;
 
 typedef struct zmaxheap_iterator zmaxheap_iterator_t;
@@ -38,5 +37,5 @@ void zmaxheap_add(zmaxheap_t *heap, void *p, float v);
 // while (zmaxheap_remove_max(...)) { }
 int zmaxheap_remove_max(zmaxheap_t *heap, void *p, float *v);
 
-}}
+}
 #endif

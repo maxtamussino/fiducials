@@ -11,15 +11,15 @@
 // The views and conclusions contained in the software and documentation are those
 // of the authors and should not be interpreted as representing official policies,
 // either expressed or implied, of the Regents of The University of Michigan.
-#ifndef _OPENCV_ZARRAY_HPP_
-#define _OPENCV_ZARRAY_HPP_
+#ifndef _OPENCV_ZARRAY_CUDA_HPP_
+#define _OPENCV_ZARRAY_CUDA_HPP_
 
 #include <stdlib.h>
 #include <string.h>
 
-namespace cv {
-namespace aruco {
+namespace aruco_cuda {
 
+using namespace cv;
 
 struct sQuad{
     float p[4][2]; // corners
@@ -145,6 +145,5 @@ static inline void _zarray_set(zarray_t *za, int idx, const void *p, void *outp)
     memcpy(&za->data[idx*za->el_sz], p, za->el_sz);
 }
 
-}
 }
 #endif
