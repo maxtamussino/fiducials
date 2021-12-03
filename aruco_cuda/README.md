@@ -61,7 +61,11 @@ which will find the default ROS OpenCV `3.2`, to
 find_package(OpenCV 3.4 REQUIRED PATHS /usr/local/
 ```
 
-to look for the manually installed version `3.4.16`. All other packages will still find the ROS default version of `cv_bridge` in their `CmakeLists.txt`. Only `aruco_cuda` will find the version built with OpenCV `3.4.16`.
+to look for the manually installed version `3.4.16`. All other packages will still find the ROS default version of `cv_bridge` in their `CmakeLists.txt`. Only `aruco_cuda` will find the version built with OpenCV `3.4.16`. This custom version of `cv_bridge` is found by the `aruco_cuda` package in `CMakeLists.txt` line `7`:
+
+```
+set(cv_bridge_DIR /home/jetson/catkin_ws/devel/share/cv_bridge/cmake)
+```
 
 ## What has been done
 
