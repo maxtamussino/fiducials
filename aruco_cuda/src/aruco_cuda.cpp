@@ -36,12 +36,17 @@ or tort (including negligence or otherwise) arising in any way out of
 the use of this software, even if advised of the possibility of such damage.
 */
 
+#include <cuda_runtime.h> 
+
 #include "precomp.hpp"
 #include <opencv2/aruco.hpp>
 #include <opencv2/core.hpp>
 #include <opencv2/imgproc.hpp>
 
 #include <opencv2/cudaimgproc.hpp>
+#include <opencv2/cudafilters.hpp>
+#include <opencv2/cudaarithm.hpp>
+#include <opencv2/cudawarping.hpp>
 
 #include "zarray.hpp"
 #include "apriltag_quad_thresh.hpp"
@@ -104,7 +109,7 @@ Ptr<DetectorParameters> DetectorParameters::create() {
 /**
   * @brief Convert input image to gray if it is a 3-channels image
   */
-static void _convertToGrey(InputArray _in, OutputArray _out) {
+static void _convertToGrey(const cuda::GpuMat& _in, cuda::GpuMat& _out) {
 
     CV_Assert(_in.type() == CV_8UC1 || _in.type() == CV_8UC3);
 
@@ -118,11 +123,27 @@ static void _convertToGrey(InputArray _in, OutputArray _out) {
 /**
   * @brief Threshold input image using adaptive thresholding
   */
-static void _threshold(InputArray _in, OutputArray _out, int winSize, double constant) {
+static void _threshold(const cuda::GpuMat& _in, cuda::GpuMat& _out, int winSize, double constant) {
 
     CV_Assert(winSize >= 3);
     if(winSize % 2 == 0) winSize++; // win size must be odd
-    adaptiveThreshold(_in, _out, 255, ADAPTIVE_THRESH_MEAN_C, THRESH_BINARY_INV, winSize, constant);
+    CV_Assert(_in.type() == CV_8UC1 && _out.type() == CV_8UC1);
+
+    // CPU Implementation
+    //adaptiveThreshold(_in, _out, 255, ADAPTIVE_THRESH_MEAN_C, THRESH_BINARY_INV, winSize, constant);
+
+    // GPU Implementation
+    // Adaptive thresholding is not implemented in cv::cuda. The function cuda::threshold(meanSubstImg)
+    // only supports a scalar threshold (not matrix). Therefore, the thresholding procedure is manually 
+    // implemented
+
+    // The parameter ADAPTIVE_THRESH_MEAN_C for adaptiveMethod (CPU impl) means the threshold value
+    // is determined by the mean of the surrounding pixels minus the threshold constant
+    // See https://docs.opencv.org/3.4/db/d8e/tutorial_threshold.html for thresholding information
+    Ptr<cuda::Filter> filter = cuda::createBoxFilter(CV_8UC1, CV_8UC1, Size(winSize,winSize));
+    filter->apply(_in, _out);                // _out holds mean of neighbouring pixels
+    cuda::add(_out, -constant, _out);        // _out holds mean - C
+    cuda::compare(_in, _out, _out, CMP_LT);  // compare input to mean - C and store 255 if in<out and 0 if in>=out
 }
 
 
@@ -130,7 +151,7 @@ static void _threshold(InputArray _in, OutputArray _out, int winSize, double con
   * @brief Given a tresholded image, find the contours, calculate their polygonal approximation
   * and take those that accomplish some conditions
   */
-static void _findMarkerContours(InputArray _in, vector< vector< Point2f > > &candidates,
+static void _findMarkerContours(Mat& contoursImg, vector< vector< Point2f > > &candidates,
                                 vector< vector< Point > > &contoursOut, double minPerimeterRate,
                                 double maxPerimeterRate, double accuracyRate,
                                 double minCornerDistanceRate, int minDistanceToBorder) {
@@ -140,14 +161,14 @@ static void _findMarkerContours(InputArray _in, vector< vector< Point2f > > &can
 
     // calculate maximum and minimum sizes in pixels
     unsigned int minPerimeterPixels =
-        (unsigned int)(minPerimeterRate * max(_in.getMat().cols, _in.getMat().rows));
+        (unsigned int)(minPerimeterRate * max(contoursImg.cols, contoursImg.rows));
     unsigned int maxPerimeterPixels =
-        (unsigned int)(maxPerimeterRate * max(_in.getMat().cols, _in.getMat().rows));
+        (unsigned int)(maxPerimeterRate * max(contoursImg.cols, contoursImg.rows));
 
-    Mat contoursImg;
-    _in.getMat().copyTo(contoursImg);
+    // TODO contour finding still relies on CPU (download bottleneck?)
     vector< vector< Point > > contours;
     findContours(contoursImg, contours, RETR_LIST, CHAIN_APPROX_NONE);
+    
     // now filter list of contours
     for(unsigned int i = 0; i < contours.size(); i++) {
         // check perimeter
@@ -352,7 +373,7 @@ static void _filterTooCloseCandidates(const vector< vector< Point2f > > &candida
 /**
  * @brief Initial steps on finding square candidates
  */
-static void _detectInitialCandidates(const Mat &grey, vector< vector< Point2f > > &candidates,
+static void _detectInitialCandidates(const cuda::GpuMat& greyImg, vector< vector< Point2f > > &candidates,
                                      vector< vector< Point > > &contours,
                                      const Ptr<DetectorParameters> &params) {
 
@@ -367,24 +388,35 @@ static void _detectInitialCandidates(const Mat &grey, vector< vector< Point2f > 
     vector< vector< vector< Point2f > > > candidatesArrays((size_t) nScales);
     vector< vector< vector< Point > > > contoursArrays((size_t) nScales);
 
+    // shared memory (https://forums.developer.nvidia.com/t/eliminate-upload-download-for-opencv-cuda-gpumat-using-shared-memory/83090/3)
+    unsigned int frameByteSize = greyImg.rows * greyImg.cols; 
+    void *unified_ptr;
+    cudaMallocManaged(&unified_ptr, frameByteSize);
+    Mat threshImgCPU(greyImg.rows, greyImg.cols, CV_8UC1, unified_ptr);
+    cuda::GpuMat threshImgGPU(greyImg.rows, greyImg.cols, CV_8UC1, unified_ptr);
+
     ////for each value in the interval of thresholding window sizes
+    /*
     parallel_for_(Range(0, nScales), [&](const Range& range) {
         const int begin = range.start;
-        const int end = range.end;
+        const int end = range.end;*/
 
-        for (int i = begin; i < end; i++) {
+        // shared mem see above
+
+        for (int i = 0; i < nScales; i++) {
             int currScale = params->adaptiveThreshWinSizeMin + i * params->adaptiveThreshWinSizeStep;
-            // threshold
-            Mat thresh;
-            _threshold(grey, thresh, currScale, params->adaptiveThreshConstant);
 
+            // threshold
+            _threshold(greyImg, threshImgGPU, currScale, params->adaptiveThreshConstant);
+/*
             // detect rectangles
-            _findMarkerContours(thresh, candidatesArrays[i], contoursArrays[i],
+            _findMarkerContours(threshImgCPU, candidatesArrays[i], contoursArrays[i],
                                 params->minMarkerPerimeterRate, params->maxMarkerPerimeterRate,
                                 params->polygonalApproxAccuracyRate, params->minCornerDistanceRate,
-                                params->minDistanceToBorder);
+                                params->minDistanceToBorder);*/
         }
-    });
+        cudaFree(unified_ptr);
+    //});
 
     // join candidates
     for(int i = 0; i < nScales; i++) {
@@ -399,20 +431,18 @@ static void _detectInitialCandidates(const Mat &grey, vector< vector< Point2f > 
 /**
  * @brief Detect square candidates in the input image
  */
-static void _detectCandidates(InputArray _image, vector< vector< vector< Point2f > > >& candidatesSetOut,
+static void _detectCandidates(const cuda::GpuMat& greyImg, vector< vector< vector< Point2f > > >& candidatesSetOut,
                               vector< vector< vector< Point > > >& contoursSetOut, const Ptr<DetectorParameters> &_params) {
 
-    Mat image = _image.getMat();
-    CV_Assert(image.total() != 0);
+    CV_Assert(!greyImg.empty());
 
     /// 1. CONVERT TO GRAY
-    Mat grey;
-    _convertToGrey(image, grey);
+    // this is done before already
 
     vector< vector< Point2f > > candidates;
     vector< vector< Point > > contours;
     /// 2. DETECT FIRST SET OF CANDIDATES
-    _detectInitialCandidates(grey, candidates, contours, _params);
+    _detectInitialCandidates(greyImg, candidates, contours, _params);
 
     /// 3. SORT CORNERS
     _reorderCandidatesCorners(candidates);
@@ -428,11 +458,11 @@ static void _detectCandidates(InputArray _image, vector< vector< vector< Point2f
   * @brief Given an input image and candidate corners, extract the bits of the candidate, including
   * the border bits
   */
-static Mat _extractBits(InputArray _image, InputArray _corners, int markerSize,
+static Mat _extractBits(const cuda::GpuMat& greyImg, InputArray _corners, int markerSize,
                         int markerBorderBits, int cellSize, double cellMarginRate,
                         double minStdDevOtsu) {
 
-    CV_Assert(_image.getMat().channels() == 1);
+    CV_Assert(greyImg.channels() == 1);
     CV_Assert(_corners.total() == 4);
     CV_Assert(markerBorderBits > 0 && cellSize > 0 && cellMarginRate >= 0 && cellMarginRate <= 1);
     CV_Assert(minStdDevOtsu >= 0);
@@ -441,7 +471,7 @@ static Mat _extractBits(InputArray _image, InputArray _corners, int markerSize,
     int markerSizeWithBorders = markerSize + 2 * markerBorderBits;
     int cellMarginPixels = int(cellMarginRate * cellSize);
 
-    Mat resultImg; // marker image after removing perspective
+    cuda::GpuMat resultImg; // marker image after removing perspective
     int resultImgSize = markerSizeWithBorders * cellSize;
     Mat resultImgCorners(4, 1, CV_32FC2);
     resultImgCorners.ptr< Point2f >(0)[0] = Point2f(0, 0);
@@ -452,7 +482,7 @@ static Mat _extractBits(InputArray _image, InputArray _corners, int markerSize,
 
     // remove perspective
     Mat transformation = getPerspectiveTransform(_corners, resultImgCorners);
-    warpPerspective(_image, resultImg, transformation, Size(resultImgSize, resultImgSize),
+    cuda::warpPerspective(greyImg, resultImg, transformation, Size(resultImgSize, resultImgSize),
                     INTER_NEAREST);
 
     // output image containing the bits
@@ -460,14 +490,14 @@ static Mat _extractBits(InputArray _image, InputArray _corners, int markerSize,
 
     // check if standard deviation is enough to apply Otsu
     // if not enough, it probably means all bits are the same color (black or white)
-    Mat mean, stddev;
+    Scalar mean, stddev;
     // Remove some border just to avoid border noise from perspective transformation
-    Mat innerRegion = resultImg.colRange(cellSize / 2, resultImg.cols - cellSize / 2)
-                          .rowRange(cellSize / 2, resultImg.rows - cellSize / 2);
-    meanStdDev(innerRegion, mean, stddev);
-    if(stddev.ptr< double >(0)[0] < minStdDevOtsu) {
+    cuda::GpuMat innerRegion = resultImg.colRange(cellSize / 2, resultImg.cols - cellSize / 2)
+                                        .rowRange(cellSize / 2, resultImg.rows - cellSize / 2);
+    cuda::meanStdDev(innerRegion, mean, stddev);
+    if(stddev[0] < minStdDevOtsu) {
         // all black or all white, depending on mean value
-        if(mean.ptr< double >(0)[0] > 127)
+        if(mean[0] > 127)
             bits.setTo(1);
         else
             bits.setTo(0);
@@ -475,18 +505,22 @@ static Mat _extractBits(InputArray _image, InputArray _corners, int markerSize,
     }
 
     // now extract code, first threshold using Otsu
-    threshold(resultImg, resultImg, 125, 255, THRESH_BINARY | THRESH_OTSU);
+    // TODO Otsu not supported on GPU
+    cuda::threshold(resultImg, resultImg, 125, 255, THRESH_BINARY);
 
     // for each cell
     for(int y = 0; y < markerSizeWithBorders; y++) {
         for(int x = 0; x < markerSizeWithBorders; x++) {
             int Xstart = x * (cellSize) + cellMarginPixels;
             int Ystart = y * (cellSize) + cellMarginPixels;
-            Mat square = resultImg(Rect(Xstart, Ystart, cellSize - 2 * cellMarginPixels,
+            // TODO check new impl
+            //int width = cellSize - 2 * cellMarginPixels;
+            //Mat square = resultImg.colRange(Xstart, Ystart).rowRange(width, width);
+            cuda::GpuMat square = resultImg(Rect(Xstart, Ystart, cellSize - 2 * cellMarginPixels,
                                         cellSize - 2 * cellMarginPixels));
             // count white pixels on each cell to assign its value
-            size_t nZ = (size_t) countNonZero(square);
-            if(nZ > square.total() / 2) bits.at< unsigned char >(y, x) = 1;
+            size_t nZ = (size_t) cuda::countNonZero(square);
+            if (nZ > square.cols * square.rows / 2) bits.at< unsigned char >(y, x) = 1;
         }
     }
 
@@ -527,18 +561,18 @@ static int _getBorderErrors(const Mat &bits, int markerSize, int borderSize) {
  *                           1 if the candidate is a black candidate (default candidate)
  *                           2 if the candidate is a white candidate
  */
-static uint8_t _identifyOneCandidate(const Ptr<aruco::Dictionary>& dictionary, InputArray _image,
+static uint8_t _identifyOneCandidate(const Ptr<aruco::Dictionary>& dictionary, const cuda::GpuMat& greyImg,
                                   vector<Point2f>& _corners, int& idx,
                                   const Ptr<DetectorParameters>& params, int& rotation)
 {
     CV_Assert(_corners.size() == 4);
-    CV_Assert(_image.getMat().total() != 0);
+    CV_Assert(!greyImg.empty());
     CV_Assert(params->markerBorderBits > 0);
 
     uint8_t typ=1;
     // get bits
     Mat candidateBits =
-        _extractBits(_image, _corners, dictionary->markerSize, params->markerBorderBits,
+        _extractBits(greyImg, _corners, dictionary->markerSize, params->markerBorderBits,
                      params->perspectiveRemovePixelPerCell,
                      params->perspectiveRemoveIgnoredMarginPerCell, params->minOtsuStdDev);
 
@@ -618,7 +652,7 @@ static void correctCornerPosition( vector< Point2f >& _candidate, int rotate){
 /**
  * @brief Identify square candidates according to a marker dictionary
  */
-static void _identifyCandidates(InputArray _image, vector< vector< vector< Point2f > > >& _candidatesSet,
+static void _identifyCandidates(const cuda::GpuMat& greyImg, vector< vector< vector< Point2f > > >& _candidatesSet,
                                 vector< vector< vector<Point> > >& _contoursSet, const Ptr<aruco::Dictionary> &_dictionary,
                                 vector< vector< Point2f > >& _accepted, vector< vector<Point> >& _contours, vector< int >& ids,
                                 const Ptr<DetectorParameters> &params,
@@ -630,10 +664,7 @@ static void _identifyCandidates(InputArray _image, vector< vector< vector< Point
 
     vector< vector< Point > > contours;
 
-    CV_Assert(_image.getMat().total() != 0);
-
-    Mat grey;
-    _convertToGrey(_image.getMat(), grey);
+    CV_Assert(!greyImg.empty());
 
     vector< int > idsTmp(ncandidates, -1);
     vector< int > rotated(ncandidates, 0);
@@ -648,7 +679,7 @@ static void _identifyCandidates(InputArray _image, vector< vector< vector< Point
 
         for(int i = begin; i < end; i++) {
             int currId;
-            validCandidates[i] = _identifyOneCandidate(_dictionary, grey, candidates[i], currId, params, rotated[i]);
+            validCandidates[i] = _identifyOneCandidate(_dictionary, greyImg, candidates[i], currId, params, rotated[i]);
 
             if(validCandidates[i] > 0)
                 idsTmp[i] = currId;
@@ -990,8 +1021,18 @@ void detectMarkers(InputArray _image, const Ptr<aruco::Dictionary> &_dictionary,
 
     CV_Assert(!_image.empty());
 
-    Mat grey;
-    _convertToGrey(_image.getMat(), grey);
+    // Shared memory allocation
+    // https://forums.developer.nvidia.com/t/eliminate-upload-download-for-opencv-cuda-gpumat-using-shared-memory/83090/3
+    unsigned int frameByteSize = _image.rows * _image.cols; 
+    void *unified_ptr;
+    cudaMallocManaged(&unified_ptr, frameByteSize);
+    Mat threshImgCPU(greyImg.rows, greyImg.cols, CV_8UC1, unified_ptr);
+    cuda::GpuMat threshImgGPU(greyImg.rows, greyImg.cols, CV_8UC1, unified_ptr);
+
+    cuda::GpuMat inImg, greyImg;
+    Mat greyImgCPU = _image.getMat();
+    inImg.upload(greyImgCPU);
+    _convertToGrey(inImg, greyImg);
 
     /// STEP 1: Detect marker candidates
     vector< vector< Point2f > > candidates;
@@ -1001,19 +1042,22 @@ void detectMarkers(InputArray _image, const Ptr<aruco::Dictionary> &_dictionary,
     vector< vector< vector< Point2f > > > candidatesSet;
     vector< vector< vector< Point > > > contoursSet;
     /// STEP 1.a Detect marker candidates :: using AprilTag
+    // TODO apriltag corner refinement still using CPU
+    /*
     if(_params->cornerRefinementMethod == CORNER_REFINE_APRILTAG){
-        _apriltag(grey, _params, candidates, contours);
+        _apriltag(greyImgCPU, _params, candidates, contours);
 
         candidatesSet.push_back(candidates);
         contoursSet.push_back(contours);
     }
 
     /// STEP 1.b Detect marker candidates :: traditional way
-    else
-        _detectCandidates(grey, candidatesSet, contoursSet, _params);
+    else */
+
+        _detectCandidates(greyImg, candidatesSet, contoursSet, _params);
 
     /// STEP 2: Check candidate codification (identify markers)
-    _identifyCandidates(grey, candidatesSet, contoursSet, _dictionary, candidates, contours, ids, _params,
+    _identifyCandidates(greyImg, candidatesSet, contoursSet, _dictionary, candidates, contours, ids, _params,
                         _rejectedImgPoints);
 
     // copy to output arrays
@@ -1031,7 +1075,8 @@ void detectMarkers(InputArray _image, const Ptr<aruco::Dictionary> &_dictionary,
             const int end = range.end;
 
             for (int i = begin; i < end; i++) {
-                cornerSubPix(grey, _corners.getMat(i),
+                // TODO cornerSubPix refinement Still using CPU
+                cornerSubPix(greyImgCPU, _corners.getMat(i),
                              Size(_params->cornerRefinementWinSize, _params->cornerRefinementWinSize),
                              Size(-1, -1),
                              TermCriteria(TermCriteria::MAX_ITER | TermCriteria::EPS,
@@ -1243,7 +1288,7 @@ static void _projectUndetectedMarkers(const Ptr<Board> &_board, InputOutputArray
 
 /**
   */
-void refineDetectedMarkers(InputArray _image, const Ptr<Board> &_board,
+void refineDetectedMarkers(const cuda::GpuMat& greyImg, const Ptr<Board> &_board,
                            InputOutputArrayOfArrays _detectedCorners, InputOutputArray _detectedIds,
                            InputOutputArrayOfArrays _rejectedCorners, InputArray _cameraMatrix,
                            InputArray _distCoeffs, float minRepDistance, float errorCorrectionRate,
@@ -1277,9 +1322,6 @@ void refineDetectedMarkers(InputArray _image, const Ptr<Board> &_board,
     aruco::Dictionary &dictionary = *(_board->dictionary);
     int maxCorrectionRecalculated =
         int(double(dictionary.maxCorrectionBits) * errorCorrectionRate);
-
-    Mat grey;
-    _convertToGrey(_image, grey);
 
     // vector of final detected marker corners and ids
     vector< Mat > finalAcceptedCorners;
@@ -1344,7 +1386,7 @@ void refineDetectedMarkers(InputArray _image, const Ptr<Board> &_board,
 
                 // extract bits
                 Mat bits = _extractBits(
-                    grey, rotatedMarker, dictionary.markerSize, params.markerBorderBits,
+                    greyImg, rotatedMarker, dictionary.markerSize, params.markerBorderBits,
                     params.perspectiveRemovePixelPerCell,
                     params.perspectiveRemoveIgnoredMarginPerCell, params.minOtsuStdDev);
 
@@ -1372,7 +1414,9 @@ void refineDetectedMarkers(InputArray _image, const Ptr<Board> &_board,
                 CV_Assert(params.cornerRefinementWinSize > 0 &&
                           params.cornerRefinementMaxIterations > 0 &&
                           params.cornerRefinementMinAccuracy > 0);
-                cornerSubPix(grey, closestRotatedMarker,
+                // TODO subpixel corner refinement to GPU (necessary?)
+                Mat greyImgCPU(greyImg);
+                cornerSubPix(greyImgCPU, closestRotatedMarker,
                              Size(params.cornerRefinementWinSize, params.cornerRefinementWinSize),
                              Size(-1, -1), TermCriteria(TermCriteria::MAX_ITER | TermCriteria::EPS,
                                                         params.cornerRefinementMaxIterations,
