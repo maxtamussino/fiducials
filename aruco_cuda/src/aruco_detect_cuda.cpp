@@ -349,7 +349,11 @@ void FiducialsNode::imageCallback(const sensor_msgs::ImageConstPtr & msg)
     try {
         cv_ptr = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::BGR8);
 
+        // DETECT MARKERS AND TIME
+        ros::Time begin = ros::Time::now();
         aruco_cuda::detectMarkers(cv_ptr->image, dictionary, corners, ids, detectorParams);
+        ros::Time end = ros::Time::now();
+        ROS_INFO("Detection took %.2fms", (end - begin).toNSec() * 1e-6);
 
         int detected_count = (int)ids.size();
         if(verbose || detected_count != prev_detected_count){
@@ -380,11 +384,10 @@ void FiducialsNode::imageCallback(const sensor_msgs::ImageConstPtr & msg)
 
         vertices_pub.publish(fva);
 
-        if(ids.size() > 0) {
-            aruco::drawDetectedMarkers(cv_ptr->image, corners, ids);
-        }
-
         if (publish_images) {
+            if(ids.size() > 0) {
+                aruco::drawDetectedMarkers(cv_ptr->image, corners, ids);
+            }
             image_pub.publish(cv_ptr->toImageMsg());
         }
     }
