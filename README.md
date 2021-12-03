@@ -1,3 +1,6 @@
+# Fork
+
+This fork provides the package `aruco_cuda`, a GPU aruco detection node for NVIDIA Jetson platforms. Please refer to its [README](aruco_cuda/README.md) for more information.
 
 # Simultaneous Localization and Mapping Using Fiducial Markers
 Travis:  [![Build Status](https://travis-ci.org/UbiquityRobotics/fiducials.svg?branch=kinetic-devel)](https://travis-ci.org/UbiquityRobotics/fiducials)
